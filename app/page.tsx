@@ -1,10 +1,11 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "../lib/supabase";
 
 type Trip = {
-  id: number;
+  id: string;
   destination: string;
   country: string;
   dates: string;
@@ -16,7 +17,7 @@ type Trip = {
 
 const initialTrips: Trip[] = [
   {
-    id: 1,
+    id: "milan",
     destination: "Milan",
     country: "Italy",
     dates: "19–21 November 2026",
@@ -26,7 +27,7 @@ const initialTrips: Trip[] = [
     details: "Museums, fashion & Italian food",
   },
   {
-    id: 2,
+    id: "verona",
     destination: "Verona",
     country: "Italy",
     dates: "2027 · Dates to be confirmed",
@@ -38,12 +39,13 @@ const initialTrips: Trip[] = [
 ];
 
 export default function Home() {
-  const [trips, setTrips] = useState(initialTrips);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [isLoadingTrips, setIsLoadingTrips] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All trips");
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null); 
   const [isEditing, setIsEditing] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
   destination: "",
@@ -51,6 +53,55 @@ export default function Home() {
   dates: "",
   details: "",
   });
+
+  useEffect(() => {
+  async function loadTrips() {
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError || !sessionData.session) {
+      window.location.href = "/login";
+      return;
+    }
+
+    const userId = sessionData.session.user.id;
+
+    const { data, error } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Could not load trips:", error.message);
+      alert("Could not load trips. Please check the connection and try again.");
+      setIsLoadingTrips(false);
+      return;
+    }
+console.log("Trips loaded from Supabase:", data);
+
+    const loadedTrips: Trip[] = (data ?? []).map((trip) => ({
+      id: trip.id,
+      destination: trip.destination,
+      country: trip.country,
+      dates:
+        trip.date_label ||
+        (trip.start_date && trip.end_date
+           ? `${trip.start_date} – ${trip.end_date}`
+           : "Dates to be confirmed"),
+      status: trip.status,
+      emoji: trip.emoji || "✈️",
+      color: trip.color || "from-sky-100 to-blue-50",
+      details: trip.details || "",
+    }));
+
+    setTrips(loadedTrips);
+    setIsLoadingTrips(false);
+  }
+
+  loadTrips();
+}, []);
+
 
 
   const visibleTrips = useMemo(() => {
@@ -67,7 +118,13 @@ export default function Home() {
     });
   }, [trips, search, filter]);
 
-
+if (isLoadingTrips) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#f7f7f2]">
+      <p className="text-[#24483e]">Loading your trips...</p>
+    </main>
+  );
+}
   
 function addTrip() {
   setEditingId(null);
@@ -93,7 +150,8 @@ function startEdit(trip: Trip) {
   setIsEditing(true);
 }
 
-function saveTrip() {
+
+async function saveTrip() {
   const destination = form.destination.trim();
   const country = form.country.trim();
 
@@ -102,23 +160,82 @@ function saveTrip() {
     return;
   }
 
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+
+  if (sessionError || !sessionData.session) {
+    alert("Please sign in again.");
+    window.location.href = "/login";
+    return;
+  }
+
+  const userId = sessionData.session.user.id;
+
   if (editingId !== null) {
+    const { data, error } = await supabase
+      .from("trips")
+      .update({
+        destination,
+        country,
+        date_label: form.dates,
+        details: form.details,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", editingId)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Could not update trip:", error.message);
+      alert("Could not save changes: " + error.message);
+      return;
+    }
+
     setTrips((current) =>
       current.map((trip) =>
         trip.id === editingId
-          ? { ...trip, ...form, destination, country }
+          ? {
+              ...trip,
+              destination: data.destination,
+              country: data.country,
+              dates: data.date_label || "Dates to be confirmed",
+              details: data.details || "",
+            }
           : trip
       )
     );
   } else {
+    const { data, error } = await supabase
+      .from("trips")
+      .insert({
+        user_id: userId,
+        destination,
+        country,
+        date_label: form.dates,
+        details: form.details,
+        status: "upcoming",
+        emoji: "✈️",
+        color: "from-sky-100 to-blue-50",
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Could not create trip:", error.message);
+      alert("Could not save trip: " + error.message);
+      return;
+    }
+
     const newTrip: Trip = {
-      id: Date.now(),
-      ...form,
-      destination,
-      country,
-      status: "upcoming",
-      emoji: "✈️",
-      color: "from-sky-100 to-blue-50",
+      id: data.id,
+      destination: data.destination,
+      country: data.country,
+      dates: data.date_label || "Dates to be confirmed",
+      status: data.status,
+      emoji: data.emoji || "✈️",
+      color: data.color || "from-sky-100 to-blue-50",
+      details: data.details || "",
     };
 
     setTrips((current) => [newTrip, ...current]);
@@ -128,19 +245,40 @@ function saveTrip() {
   setEditingId(null);
 }
 
-function deleteTrip(trip: Trip) {
+async function deleteTrip(trip: Trip) {
   const confirmed = window.confirm(
     `Delete the trip to ${trip.destination}?`
   );
 
   if (!confirmed) return;
 
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user.id;
+
+  if (!userId) {
+    alert("Please sign in again.");
+    window.location.href = "/login";
+    return;
+  }
+
+  const { error } = await supabase
+    .from("trips")
+    .delete()
+    .eq("id", trip.id)
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("Could not delete trip:", error.message);
+    alert("Could not delete trip: " + error.message);
+    return;
+  }
+
   setTrips((current) =>
     current.filter((item) => item.id !== trip.id)
   );
+
   setSelectedTrip(null);
 }
-
   
   
 
