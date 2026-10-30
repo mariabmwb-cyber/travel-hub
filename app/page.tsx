@@ -42,6 +42,35 @@ type Booking = {
   currency: string | null;
   notes: string | null;
   source_url: string | null;
+  source_type: "manual" | "gmail";
+  source_item_id: string | null;
+  transport_segment_id: string | null;
+  stay_id: string | null;
+};
+
+type TransportSegment = {
+  id: string;
+  trip_id: string;
+  user_id: string;
+  direction: "outbound" | "return";
+  segment_order: number;
+  transport_type: "flight" | "train" | "bus" | "car" | "ferry" | "other";
+  origin: string;
+  destination: string;
+  departure_at: string | null;
+  arrival_at: string | null;
+  notes: string | null;
+};
+
+type Stay = {
+  id: string;
+  trip_id: string;
+  user_id: string;
+  name: string;
+  city: string | null;
+  check_in: string;
+  check_out: string;
+  notes: string | null;
 };
 
 type TripEvent = {
@@ -232,6 +261,32 @@ const bookingItems: TimelineItem[] = bookings.map((booking) => {
 export default function Home() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [transportSegments, setTransportSegments] = useState<TransportSegment[]>([]);
+  const [stays, setStays] = useState<Stay[]>([]);
+  const [isAddingTransport, setIsAddingTransport] = useState(false);
+  const [isSavingTransport, setIsSavingTransport] = useState(false);
+  const [editingTransportId, setEditingTransportId] = useState<string | null>(null);
+  const [transportForm, setTransportForm] = useState({
+    direction: "outbound" as "outbound" | "return",
+    transport_type: "flight" as "flight" | "train" | "bus" | "car" | "ferry" | "other",
+    origin: "",
+    destination: "",
+    departure_at: "",
+    arrival_at: "",
+    notes: "",
+  });
+  const [isAddingStay, setIsAddingStay] = useState(false);
+  const [isSavingStay, setIsSavingStay] = useState(false);
+  const [editingStayId, setEditingStayId] = useState<string | null>(null);
+  const [stayForm, setStayForm] = useState({
+    name: "",
+    city: "",
+    check_in: "",
+    check_out: "",
+    notes: "",
+  });
+  const [isLoadingTransport, setIsLoadingTransport] = useState(false);
+  const [isLoadingStays, setIsLoadingStays] = useState(false);
   const [isLoadingBookings, setIsLoadingBookings] = useState(false);
   const [tripEvents, setTripEvents] = useState<TripEvent[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
@@ -278,21 +333,23 @@ const groupedEvents = useMemo(() => {
   const [isSavingBooking, setIsSavingBooking] = useState(false);
 
   const [bookingForm, setBookingForm] = useState({
-  booking_type: "flight" as Booking["booking_type"],
-  title: "",
-  provider: "",
-  confirmation_number: "",
-  status: "confirmed" as Booking["status"],
-  start_at: "",
-  end_at: "",
-  location: "",
-  departure_location: "",
-  arrival_location: "",
-  price: "",
-  currency: "EUR",
-  notes: "",
-  source_url: "",
-    });
+    booking_type: "flight" as Booking["booking_type"],
+    title: "",
+    provider: "",
+    confirmation_number: "",
+    status: "confirmed" as Booking["status"],
+    start_at: "",
+    end_at: "",
+    location: "",
+    departure_location: "",
+    arrival_location: "",
+    price: "",
+    currency: "EUR",
+    notes: "",
+    source_url: "",
+    transport_segment_id: "",
+    stay_id: "",
+  });
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All trips");
@@ -383,6 +440,64 @@ useEffect(() => {
   }
 
   loadBookings();
+}, [selectedTrip?.id]);
+
+useEffect(() => {
+  async function loadTransportSegments() {
+    if (!selectedTrip) {
+      setTransportSegments([]);
+      return;
+    }
+
+    setIsLoadingTransport(true);
+
+    const { data, error } = await supabase
+      .from("trip_transport_segments")
+      .select("*")
+      .eq("trip_id", selectedTrip.id)
+      .order("direction", { ascending: true })
+      .order("segment_order", { ascending: true });
+
+    if (error) {
+      console.error("Could not load transport segments:", error.message);
+      setTransportSegments([]);
+    } else {
+      setTransportSegments((data ?? []) as TransportSegment[]);
+    }
+
+    setIsLoadingTransport(false);
+  }
+
+  loadTransportSegments();
+}, [selectedTrip?.id]);
+
+
+useEffect(() => {
+  async function loadStays() {
+    if (!selectedTrip) {
+      setStays([]);
+      return;
+    }
+
+    setIsLoadingStays(true);
+
+    const { data, error } = await supabase
+      .from("trip_stays")
+      .select("*")
+      .eq("trip_id", selectedTrip.id)
+      .order("check_in", { ascending: true });
+
+    if (error) {
+      console.error("Could not load stays:", error.message);
+      setStays([]);
+    } else {
+      setStays((data ?? []) as Stay[]);
+    }
+
+    setIsLoadingStays(false);
+  }
+
+  loadStays();
 }, [selectedTrip?.id]);
 
 
@@ -657,6 +772,8 @@ function startEditBooking(booking: Booking) {
     currency: booking.currency ?? "EUR",
     notes: booking.notes ?? "",
     source_url: booking.source_url ?? "",
+    transport_segment_id: "",
+    stay_id: "",
   });
 
   setEditingBookingId(booking.id);
@@ -679,6 +796,8 @@ function resetBookingForm() {
     currency: "EUR",
     notes: "",
     source_url: "",
+    transport_segment_id: "",
+    stay_id: "",
   });
 
   setEditingBookingId(null);
@@ -882,6 +1001,8 @@ async function deleteTripEvent(eventId: string) {
       currency: bookingForm.currency.trim() || "EUR",
       notes: bookingForm.notes.trim() || null,
       source_url: bookingForm.source_url.trim() || null,
+      transport_segment_id: bookingForm.transport_segment_id || null,
+      stay_id: bookingForm.stay_id || null,
     };
 
     if (editingBookingId !== null) {
@@ -954,12 +1075,239 @@ async function deleteTripEvent(eventId: string) {
       currency: "EUR",
       notes: "",
       source_url: "",
+      transport_segment_id: "",
+      stay_id: "",
     });
 
     setEditingBookingId(null);
     setIsAddingBooking(false);
   } finally {
     setIsSavingBooking(false);
+  }
+}
+
+async function saveTransportSegment() {
+  if (!selectedTrip) return;
+
+  const origin = transportForm.origin.trim();
+  const destination = transportForm.destination.trim();
+
+  if (!origin || !destination) {
+    alert("Please enter both origin and destination.");
+    return;
+  }
+
+  if (
+    transportForm.departure_at &&
+    transportForm.arrival_at &&
+    transportForm.arrival_at < transportForm.departure_at
+  ) {
+    alert("Arrival date must be after departure date.");
+    return;
+  }
+
+  setIsSavingTransport(true);
+
+  try {
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError || !sessionData.session) {
+      alert("Please sign in again.");
+      window.location.href = "/login";
+      return;
+    }
+
+    const userId = sessionData.session.user.id;
+
+    const existingSegments = transportSegments.filter(
+      (segment) => segment.direction === transportForm.direction
+    );
+
+    const segmentData = {
+      direction: transportForm.direction,
+      segment_order:
+        editingTransportId !== null
+          ? transportSegments.find(
+              (segment) => segment.id === editingTransportId
+            )?.segment_order ?? existingSegments.length + 1
+          : existingSegments.length + 1,
+      transport_type: transportForm.transport_type,
+      origin,
+      destination,
+      departure_at: transportForm.departure_at
+        ? new Date(transportForm.departure_at).toISOString()
+        : null,
+      arrival_at: transportForm.arrival_at
+        ? new Date(transportForm.arrival_at).toISOString()
+        : null,
+      notes: transportForm.notes.trim() || null,
+    };
+
+    if (editingTransportId !== null) {
+      const { data, error } = await supabase
+        .from("trip_transport_segments")
+        .update({
+          ...segmentData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingTransportId)
+        .eq("trip_id", selectedTrip.id)
+        .eq("user_id", userId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Could not update transport segment:", error.message);
+        alert("Could not update transport segment: " + error.message);
+        return;
+      }
+
+      setTransportSegments((current) =>
+        current.map((segment) =>
+          segment.id === editingTransportId
+            ? (data as TransportSegment)
+            : segment
+        )
+      );
+    } else {
+      const { data, error } = await supabase
+        .from("trip_transport_segments")
+        .insert({
+          ...segmentData,
+          trip_id: selectedTrip.id,
+          user_id: userId,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Could not save transport segment:", error.message);
+        alert("Could not save transport segment: " + error.message);
+        return;
+      }
+
+      setTransportSegments((current) => [
+        ...current,
+        data as TransportSegment,
+      ]);
+    }
+
+    setTransportForm({
+      direction: "outbound",
+      transport_type: "flight",
+      origin: "",
+      destination: "",
+      departure_at: "",
+      arrival_at: "",
+      notes: "",
+    });
+
+    setEditingTransportId(null);
+    setIsAddingTransport(false);
+  } finally {
+    setIsSavingTransport(false);
+  }
+}
+
+async function saveStay() {
+  if (!selectedTrip) return;
+
+  const name = stayForm.name.trim();
+
+  if (!name) {
+    alert("Please enter accommodation name.");
+    return;
+  }
+
+  if (!stayForm.check_in || !stayForm.check_out) {
+    alert("Please enter check-in and check-out dates.");
+    return;
+  }
+
+  if (stayForm.check_out <= stayForm.check_in) {
+    alert("Check-out must be after check-in.");
+    return;
+  }
+
+  setIsSavingStay(true);
+
+  try {
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError || !sessionData.session) {
+      alert("Please sign in again.");
+      window.location.href = "/login";
+      return;
+    }
+
+    const userId = sessionData.session.user.id;
+
+    const stayData = {
+      name,
+      city: stayForm.city.trim() || null,
+      check_in: stayForm.check_in,
+      check_out: stayForm.check_out,
+      notes: stayForm.notes.trim() || null,
+    };
+
+    if (editingStayId !== null) {
+      const { data, error } = await supabase
+        .from("trip_stays")
+        .update({
+          ...stayData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingStayId)
+        .eq("trip_id", selectedTrip.id)
+        .eq("user_id", userId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Could not update stay:", error.message);
+        alert("Could not update stay: " + error.message);
+        return;
+      }
+
+      setStays((current) =>
+        current.map((stay) =>
+          stay.id === editingStayId ? (data as Stay) : stay
+        )
+      );
+    } else {
+      const { data, error } = await supabase
+        .from("trip_stays")
+        .insert({
+          ...stayData,
+          trip_id: selectedTrip.id,
+          user_id: userId,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Could not save stay:", error.message);
+        alert("Could not save stay: " + error.message);
+        return;
+      }
+
+      setStays((current) => [...current, data as Stay]);
+    }
+
+    setStayForm({
+      name: "",
+      city: "",
+      check_in: "",
+      check_out: "",
+      notes: "",
+    });
+
+    setEditingStayId(null);
+    setIsAddingStay(false);
+  } finally {
+    setIsSavingStay(false);
   }
 }
 
@@ -997,6 +1345,111 @@ async function deleteBooking(booking: Booking) {
     current.filter((item) => item.id !== booking.id)
   );
 }
+
+function startEditTransport(segment: TransportSegment) {
+  setTransportForm({
+    direction: segment.direction,
+    transport_type: segment.transport_type,
+    origin: segment.origin,
+    destination: segment.destination,
+    departure_at: segment.departure_at
+      ? new Date(segment.departure_at).toISOString().slice(0, 16)
+      : "",
+    arrival_at: segment.arrival_at
+      ? new Date(segment.arrival_at).toISOString().slice(0, 16)
+      : "",
+    notes: segment.notes ?? "",
+  });
+
+  setEditingTransportId(segment.id);
+  setIsAddingTransport(true);
+}
+
+async function deleteTransportSegment(segment: TransportSegment) {
+  const confirmed = window.confirm(
+    `Delete route segment "${segment.origin} → ${segment.destination}"?`
+  );
+
+  if (!confirmed) return;
+
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+
+  if (sessionError || !sessionData.session) {
+    alert("Please sign in again.");
+    window.location.href = "/login";
+    return;
+  }
+
+  const userId = sessionData.session.user.id;
+
+  const { error } = await supabase
+    .from("trip_transport_segments")
+    .delete()
+    .eq("id", segment.id)
+    .eq("trip_id", selectedTrip?.id)
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("Could not delete transport segment:", error.message);
+    alert("Could not delete transport segment: " + error.message);
+    return;
+  }
+
+  setTransportSegments((current) =>
+    current.filter((item) => item.id !== segment.id)
+  );
+}
+
+function startEditStay(stay: Stay) {
+  setStayForm({
+    name: stay.name,
+    city: stay.city ?? "",
+    check_in: stay.check_in,
+    check_out: stay.check_out,
+    notes: stay.notes ?? "",
+  });
+
+  setEditingStayId(stay.id);
+  setIsAddingStay(true);
+}
+
+async function deleteStay(stay: Stay) {
+  const confirmed = window.confirm(
+    `Delete accommodation "${stay.name}"?`
+  );
+
+  if (!confirmed) return;
+
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+
+  if (sessionError || !sessionData.session) {
+    alert("Please sign in again.");
+    window.location.href = "/login";
+    return;
+  }
+
+  const userId = sessionData.session.user.id;
+
+  const { error } = await supabase
+    .from("trip_stays")
+    .delete()
+    .eq("id", stay.id)
+    .eq("trip_id", selectedTrip?.id)
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("Could not delete stay:", error.message);
+    alert("Could not delete stay: " + error.message);
+    return;
+  }
+
+  setStays((current) =>
+    current.filter((item) => item.id !== stay.id)
+  );
+}
+
 
   return (
     <main className="min-h-screen bg-[#f7f7f4] text-[#202b27]">
@@ -1217,93 +1670,210 @@ async function deleteBooking(booking: Booking) {
     Trip essentials
   </h3>
 
-  {/* Transport */}
-  <div className="mb-3 flex items-center justify-between rounded-2xl border border-gray-200 p-4">
-    <div>
-      <p className="font-medium text-gray-800">🚆 Transport</p>
-      <span
-  className={`mt-2 inline-flex rounded-full px-3 py-1 text-sm font-semibold ${
-    getEssentialStatus(
-      bookings,
-      ["flight", "train", "bus", "car_rental", "transfer", "ferry"],
-      selectedTrip.transport_not_needed
-    ) === "Booked"
-      ? "bg-green-100 text-green-800"
-      : getEssentialStatus(
-          bookings,
-          ["flight", "train", "bus", "car_rental", "transfer", "ferry"],
-          selectedTrip.transport_not_needed
-        ) === "Not needed"
-        ? "bg-gray-100 text-gray-600"
-        : "bg-amber-100 text-amber-800"
-  }`}
->
-  {getEssentialStatus(
-    bookings,
-    ["flight", "train", "bus", "car_rental", "transfer", "ferry"],
-    selectedTrip.transport_not_needed
-  )}
-</span>
-    </div>
+{/* Transport */}
 
-    <select
-  value={selectedTrip.transport_not_needed ? "not_needed" : "needed"}
-  onChange={(event) =>
-    updateEssentialStatus(
-      "transport_not_needed",
-      event.target.value === "not_needed"
-    )
-  }
-  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#315b43]"
->
-  <option value="needed">Needed</option>
-  <option value="not_needed">Not needed</option>
-</select>
-  </div>
+<div className="mb-3 rounded-2xl border border-gray-200 p-4">
+  {(() => {
+    const transportBookings = bookings
+      .filter((booking) =>
+        ["flight", "train", "bus", "car_rental", "transfer", "ferry"].includes(
+          booking.booking_type
+        )
+      )
+      .sort((a, b) => {
+        if (!a.start_at) return 1;
+        if (!b.start_at) return -1;
+        return new Date(a.start_at).getTime() - new Date(b.start_at).getTime();
+      });
+
+    const validBookings = transportBookings.filter(
+      (booking) =>
+        booking.status === "confirmed" ||
+        booking.status === "completed"
+    );
+
+    return (
+      <>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium text-gray-800">🚆 Transport</p>
+
+            <span
+              className={`mt-2 inline-flex rounded-full px-3 py-1 text-sm font-semibold ${
+                selectedTrip.transport_not_needed
+                  ? "bg-gray-100 text-gray-600"
+                  : validBookings.length > 0
+                    ? "bg-green-100 text-green-800"
+                    : "bg-amber-100 text-amber-800"
+              }`}
+            >
+              {selectedTrip.transport_not_needed
+                ? "Not needed"
+                : validBookings.length > 0
+                  ? `Booked (${validBookings.length})`
+                  : transportBookings.length > 0
+                    ? "Not booked"
+                    : "Not specified"}
+            </span>
+          </div>
+
+          <select
+            value={selectedTrip.transport_not_needed ? "not_needed" : "needed"}
+            onChange={(event) =>
+              updateEssentialStatus(
+                "transport_not_needed",
+                event.target.value === "not_needed"
+              )
+            }
+            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#315b43]"
+          >
+            <option value="needed">Needed</option>
+            <option value="not_needed">Not needed</option>
+          </select>
+        </div>
+
+        {!selectedTrip.transport_not_needed && (
+          <div className="mt-4 space-y-2">
+            {transportBookings.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No transport bookings added yet.
+              </p>
+            ) : (
+              transportBookings.map((booking) => (
+                <div
+                  key={booking.id}
+                  className="rounded-xl bg-gray-50 p-3"
+                >
+                  <p className="text-sm font-medium text-gray-800">
+                    {booking.departure_location && booking.arrival_location
+                      ? `${booking.departure_location} → ${booking.arrival_location}`
+                      : booking.title}
+                  </p>
+
+                  <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-gray-500">
+                    <span>{booking.title}</span>
+                    {booking.start_at && (
+                      <span>
+                        · {new Date(booking.start_at).toLocaleString()}
+                      </span>
+                    )}
+                    <span>· {booking.status}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </>
+    );
+  })()}
+</div>
+
 
   {/* Accommodation */}
-  <div className="flex items-center justify-between rounded-2xl border border-gray-200 p-4">
-    <div>
-      <p className="font-medium text-gray-800">🛏️ Accommodation</p>
-      <span
-  className={`mt-2 inline-flex rounded-full px-3 py-1 text-sm font-semibold ${
-    getEssentialStatus(
-      bookings,
-      ["hotel"],
-      selectedTrip.accommodation_not_needed
-    ) === "Booked"
-      ? "bg-green-100 text-green-800"
-      : getEssentialStatus(
-          bookings,
-          ["hotel"],
-          selectedTrip.accommodation_not_needed
-        ) === "Not needed"
-        ? "bg-gray-100 text-gray-600"
-        : "bg-amber-100 text-amber-800"
-  }`}
->
-  {getEssentialStatus(
-    bookings,
-    ["hotel"],
-    selectedTrip.accommodation_not_needed
-  )}
-</span>
-    </div>
 
-    <select
-  value={selectedTrip.accommodation_not_needed ? "not_needed" : "needed"}
-  onChange={(event) =>
-    updateEssentialStatus(
-      "accommodation_not_needed",
-      event.target.value === "not_needed"
-    )
-  }
-  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#315b43]"
->
-  <option value="needed">Needed</option>
-  <option value="not_needed">Not needed</option>
-</select>
-  </div>
+{/* Accommodation */}
+<div className="rounded-2xl border border-gray-200 p-4">
+  {(() => {
+    const hotelBookings = bookings
+      .filter((booking) => booking.booking_type === "hotel")
+      .sort((a, b) => {
+        if (!a.start_at) return 1;
+        if (!b.start_at) return -1;
+        return new Date(a.start_at).getTime() - new Date(b.start_at).getTime();
+      });
+
+    const validBookings = hotelBookings.filter(
+      (booking) =>
+        booking.status === "confirmed" ||
+        booking.status === "completed"
+    );
+
+    return (
+      <>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium text-gray-800">🛏️ Accommodation</p>
+
+            <span
+              className={`mt-2 inline-flex rounded-full px-3 py-1 text-sm font-semibold ${
+                selectedTrip.accommodation_not_needed
+                  ? "bg-gray-100 text-gray-600"
+                  : validBookings.length > 0
+                    ? "bg-green-100 text-green-800"
+                    : "bg-amber-100 text-amber-800"
+              }`}
+            >
+              {selectedTrip.accommodation_not_needed
+                ? "Not needed"
+                : validBookings.length > 0
+                  ? `Booked (${validBookings.length})`
+                  : hotelBookings.length > 0
+                    ? "Not booked"
+                    : "Not specified"}
+            </span>
+          </div>
+
+          <select
+            value={
+              selectedTrip.accommodation_not_needed
+                ? "not_needed"
+                : "needed"
+            }
+            onChange={(event) =>
+              updateEssentialStatus(
+                "accommodation_not_needed",
+                event.target.value === "not_needed"
+              )
+            }
+            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#315b43]"
+          >
+            <option value="needed">Needed</option>
+            <option value="not_needed">Not needed</option>
+          </select>
+        </div>
+
+        {!selectedTrip.accommodation_not_needed && (
+          <div className="mt-4 space-y-2">
+            {hotelBookings.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No accommodation bookings added yet.
+              </p>
+            ) : (
+              hotelBookings.map((booking) => (
+                <div
+                  key={booking.id}
+                  className="rounded-xl bg-gray-50 p-3"
+                >
+                  <p className="text-sm font-medium text-gray-800">
+                    {booking.title}
+                  </p>
+
+                  <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-gray-500">
+                    {booking.provider && <span>{booking.provider}</span>}
+                    {booking.start_at && (
+                      <span>
+                        · {new Date(booking.start_at).toLocaleDateString()}
+                      </span>
+                    )}
+                    {booking.end_at && (
+                      <span>
+                        – {new Date(booking.end_at).toLocaleDateString()}
+                      </span>
+                    )}
+                    <span>· {booking.status}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </>
+    );
+  })()}
+</div>
+
+
 </div>
 
             <div className="mt-6">
@@ -1709,12 +2279,16 @@ async function deleteBooking(booking: Booking) {
       </label>
       <select
         value={bookingForm.booking_type}
-        onChange={(event) =>
-          setBookingForm({
-            ...bookingForm,
-            booking_type: event.target.value as Booking["booking_type"],
-          })
-        }
+        onChange={(event) => {
+          const newType = event.target.value as Booking["booking_type"];
+
+        setBookingForm({
+          ...bookingForm,
+          booking_type: newType,
+          transport_segment_id: "",
+          stay_id: "",
+        });
+        }}
         className="w-full rounded-xl border border-gray-200 bg-white p-3 text-sm"
       >
         <option value="flight">Flight</option>
@@ -1727,6 +2301,78 @@ async function deleteBooking(booking: Booking) {
         <option value="other">Other</option>
       </select>
     </div>
+
+<p className="text-xs text-red-600">
+  Current type: {bookingForm.booking_type}
+</p>
+
+{bookingForm.booking_type === "hotel" ? (
+  <div>
+    <label className="mb-1 block text-sm font-medium text-gray-700">
+      Link to accommodation
+    </label>
+
+    {stays.length > 0 ? (
+      <select
+        value={bookingForm.stay_id}
+        onChange={(event) =>
+          setBookingForm({
+            ...bookingForm,
+            stay_id: event.target.value,
+            transport_segment_id: "",
+          })
+        }
+        className="w-full rounded-xl border border-gray-200 bg-white p-3 text-sm"
+      >
+        <option value="">Not linked</option>
+        {stays.map((stay) => (
+          <option key={stay.id} value={stay.id}>
+            {stay.name} — {stay.city || "City not specified"} (
+            {stay.check_in} – {stay.check_out})
+          </option>
+        ))}
+      </select>
+    ) : (
+      <p className="text-sm text-gray-500">
+        No accommodation added yet. Add a stay in Trip Essentials first.
+      </p>
+    )}
+  </div>
+) : ["flight", "train", "bus", "car_rental", "transfer", "ferry"].includes(
+    bookingForm.booking_type
+  ) ? (
+  <div>
+    <label className="mb-1 block text-sm font-medium text-gray-700">
+      Link to transport segment
+    </label>
+
+    {transportSegments.length > 0 ? (
+      <select
+        value={bookingForm.transport_segment_id}
+        onChange={(event) =>
+          setBookingForm({
+            ...bookingForm,
+            transport_segment_id: event.target.value,
+            stay_id: "",
+          })
+        }
+        className="w-full rounded-xl border border-gray-200 bg-white p-3 text-sm"
+      >
+        <option value="">Not linked</option>
+        {transportSegments.map((segment) => (
+          <option key={segment.id} value={segment.id}>
+            {segment.direction === "outbound" ? "Outbound" : "Return"} —{" "}
+            {segment.origin} → {segment.destination}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <p className="text-sm text-gray-500">
+        No transport segments added yet. Add a route in Trip Essentials first.
+      </p>
+    )}
+  </div>
+) : null}
 
     <div>
       <label className="mb-1 block text-sm font-medium text-gray-700">
