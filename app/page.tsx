@@ -13,6 +13,8 @@ type Trip = {
   emoji: string;
   color: string;
   details: string;
+  transport_not_needed: boolean;
+  accommodation_not_needed: boolean;
 };
 
 type Booking = {
@@ -86,6 +88,8 @@ const initialTrips: Trip[] = [
     emoji: "🇮🇹",
     color: "from-amber-100 to-orange-50",
     details: "Museums, fashion & Italian food",
+    transport_not_needed: false,
+    accommodation_not_needed: false,
   },
   {
     id: "verona",
@@ -96,6 +100,8 @@ const initialTrips: Trip[] = [
     emoji: "🎵",
     color: "from-rose-100 to-pink-50",
     details: "Sting concert",
+    transport_not_needed: false,
+    accommodation_not_needed: false,
   },
 ];
 
@@ -119,6 +125,23 @@ function groupEventsByDate(events: TripEvent[]) {
     return dateA.localeCompare(dateB);
   });
 }
+
+function getEssentialStatus(
+  bookings: Booking[],
+  types: Booking["booking_type"][],
+  notNeeded: boolean
+): "Booked" | "Not booked" | "Not needed" {
+  if (notNeeded) return "Not needed";
+
+  const hasBooking = bookings.some(
+    (booking) =>
+      types.includes(booking.booking_type) &&
+      booking.status !== "cancelled"
+  );
+
+  return hasBooking ? "Booked" : "Not booked";
+}
+
 
 function getNightsCount(
   checkIn: string,
@@ -323,6 +346,8 @@ console.log("Trips loaded from Supabase:", data);
       emoji: trip.emoji || "✈️",
       color: trip.color || "from-sky-100 to-blue-50",
       details: trip.details || "",
+      transport_not_needed: trip.transport_not_needed,
+      accommodation_not_needed: trip.accommodation_not_needed,
     }));
 
     setTrips(loadedTrips);
@@ -522,6 +547,8 @@ async function saveTrip() {
       emoji: data.emoji || "✈️",
       color: data.color || "from-sky-100 to-blue-50",
       details: data.details || "",
+      transport_not_needed: false,
+      accommodation_not_needed: false,
     };
 
     setTrips((current) => [newTrip, ...current]);
@@ -529,6 +556,50 @@ async function saveTrip() {
 
   setIsEditing(false);
   setEditingId(null);
+}
+
+async function updateEssentialStatus(
+  field: "transport_not_needed" | "accommodation_not_needed",
+  value: boolean
+) {
+  if (!selectedTrip) return;
+
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+
+  if (sessionError || !sessionData.session) {
+    alert("Please sign in again.");
+    window.location.href = "/login";
+    return;
+  }
+
+  const { error } = await supabase
+    .from("trips")
+    .update({
+      [field]: value,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", selectedTrip.id)
+    .eq("user_id", sessionData.session.user.id);
+
+  if (error) {
+    console.error("Could not update trip essentials:", error.message);
+    alert("Could not update status: " + error.message);
+    return;
+  }
+
+  const updatedTrip = {
+    ...selectedTrip,
+    [field]: value,
+  };
+
+  setTrips((current) =>
+    current.map((trip) =>
+      trip.id === selectedTrip.id ? updatedTrip : trip
+    )
+  );
+
+  setSelectedTrip(updatedTrip);
 }
 
 async function deleteTrip(trip: Trip) {
@@ -590,6 +661,27 @@ function startEditBooking(booking: Booking) {
 
   setEditingBookingId(booking.id);
   setIsAddingBooking(true);
+}
+
+function resetBookingForm() {
+  setBookingForm({
+    booking_type: "flight",
+    title: "",
+    provider: "",
+    confirmation_number: "",
+    status: "confirmed",
+    start_at: "",
+    end_at: "",
+    location: "",
+    departure_location: "",
+    arrival_location: "",
+    price: "",
+    currency: "EUR",
+    notes: "",
+    source_url: "",
+  });
+
+  setEditingBookingId(null);
 }
 
 async function saveTripEvent() {
@@ -1119,6 +1211,101 @@ async function deleteBooking(booking: Booking) {
               <p className="mt-4 text-sm text-gray-500">Plans</p>
               <p className="mt-1 font-medium">{selectedTrip.details}</p>
             </div>
+
+<div className="mt-6">
+  <h3 className="mb-3 text-lg font-semibold text-[#243b2f]">
+    Trip essentials
+  </h3>
+
+  {/* Transport */}
+  <div className="mb-3 flex items-center justify-between rounded-2xl border border-gray-200 p-4">
+    <div>
+      <p className="font-medium text-gray-800">🚆 Transport</p>
+      <span
+  className={`mt-2 inline-flex rounded-full px-3 py-1 text-sm font-semibold ${
+    getEssentialStatus(
+      bookings,
+      ["flight", "train", "bus", "car_rental", "transfer", "ferry"],
+      selectedTrip.transport_not_needed
+    ) === "Booked"
+      ? "bg-green-100 text-green-800"
+      : getEssentialStatus(
+          bookings,
+          ["flight", "train", "bus", "car_rental", "transfer", "ferry"],
+          selectedTrip.transport_not_needed
+        ) === "Not needed"
+        ? "bg-gray-100 text-gray-600"
+        : "bg-amber-100 text-amber-800"
+  }`}
+>
+  {getEssentialStatus(
+    bookings,
+    ["flight", "train", "bus", "car_rental", "transfer", "ferry"],
+    selectedTrip.transport_not_needed
+  )}
+</span>
+    </div>
+
+    <select
+  value={selectedTrip.transport_not_needed ? "not_needed" : "needed"}
+  onChange={(event) =>
+    updateEssentialStatus(
+      "transport_not_needed",
+      event.target.value === "not_needed"
+    )
+  }
+  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#315b43]"
+>
+  <option value="needed">Needed</option>
+  <option value="not_needed">Not needed</option>
+</select>
+  </div>
+
+  {/* Accommodation */}
+  <div className="flex items-center justify-between rounded-2xl border border-gray-200 p-4">
+    <div>
+      <p className="font-medium text-gray-800">🛏️ Accommodation</p>
+      <span
+  className={`mt-2 inline-flex rounded-full px-3 py-1 text-sm font-semibold ${
+    getEssentialStatus(
+      bookings,
+      ["hotel"],
+      selectedTrip.accommodation_not_needed
+    ) === "Booked"
+      ? "bg-green-100 text-green-800"
+      : getEssentialStatus(
+          bookings,
+          ["hotel"],
+          selectedTrip.accommodation_not_needed
+        ) === "Not needed"
+        ? "bg-gray-100 text-gray-600"
+        : "bg-amber-100 text-amber-800"
+  }`}
+>
+  {getEssentialStatus(
+    bookings,
+    ["hotel"],
+    selectedTrip.accommodation_not_needed
+  )}
+</span>
+    </div>
+
+    <select
+  value={selectedTrip.accommodation_not_needed ? "not_needed" : "needed"}
+  onChange={(event) =>
+    updateEssentialStatus(
+      "accommodation_not_needed",
+      event.target.value === "not_needed"
+    )
+  }
+  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#315b43]"
+>
+  <option value="needed">Needed</option>
+  <option value="not_needed">Not needed</option>
+</select>
+  </div>
+</div>
+
             <div className="mt-6">
   <div className="mb-3 flex items-center justify-between">
     <h3 className="text-lg font-semibold text-[#243b2f]">
@@ -1477,6 +1664,9 @@ async function deleteBooking(booking: Booking) {
 </div>
   )}
 </div>
+
+
+
             <div className="mt-6">
   <div className="mb-3 flex items-center justify-between">
   <h3 className="text-lg font-semibold text-[#243b2f]">
@@ -1489,14 +1679,18 @@ async function deleteBooking(booking: Booking) {
     </span>
 
     <button
-      onClick={() => setIsAddingBooking((current) => !current)}
+      onClick={() => {
+        if (isAddingBooking) {
+          setIsAddingBooking(false);
+          resetBookingForm();
+        } else {
+          resetBookingForm();
+          setIsAddingBooking(true);
+        }
+      }}
       className="rounded-xl bg-[#315b43] px-3 py-2 text-sm font-medium text-white hover:bg-[#264a36]"
     >
-      {isAddingBooking
-        ? "Cancel"
-        : editingBookingId
-          ? "Edit booking"
-          : "+ Add booking"}
+      {isAddingBooking ? "Cancel" : "+ Add booking"}
     </button>
   </div>
 </div>
@@ -1759,66 +1953,7 @@ async function deleteBooking(booking: Booking) {
   </form>
 )}
 
-  {isLoadingBookings ? (
-    <p className="text-sm text-gray-500">
-      Loading bookings...
-    </p>
-  ) : bookings.length === 0 ? (
-    <div className="rounded-2xl border border-dashed border-gray-300 p-5 text-center">
-      <p className="text-2xl">🎫</p>
-      <p className="mt-2 font-medium text-gray-700">
-        No bookings yet
-      </p>
-      <p className="mt-1 text-sm text-gray-500">
-        Flights, hotels and other reservations will appear here.
-      </p>
-    </div>
-  ) : (
-    <div className="space-y-3">
-      {bookings.map((booking) => (
-        <div
-          key={booking.id}
-          className="rounded-2xl border border-gray-200 p-4"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-medium text-gray-800">
-                {booking.title}
-              </p>
-              {booking.provider && (
-                <p className="mt-1 text-sm text-gray-500">
-                  {booking.provider}
-                </p>
-              )}
-              {booking.start_at && (
-                <p className="mt-1 text-sm text-gray-500">
-                  {new Date(booking.start_at).toLocaleString()}
-                </p>
-              )}
-            </div>
-            <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
-              {booking.status}
-            </span>
-            <button
-              type="button"
-              onClick={() => startEditBooking(booking)}
-              className="mt-3 mr-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-            >
-              Edit
-            </button>
-            
-            <button
-              type="button"
-              onClick={() => deleteBooking(booking)}
-              className="mt-3 rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
+  
 </div>
             <p className="mt-5 text-sm leading-6 text-gray-500">
               This is your first preview. We’ll add editable trip details,
