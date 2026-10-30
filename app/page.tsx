@@ -79,6 +79,27 @@ const initialTrips: Trip[] = [
   },
 ];
 
+function groupEventsByDate(events: TripEvent[]) {
+  const groups: Record<string, TripEvent[]> = {};
+
+  events.forEach((event) => {
+    const date = event.event_date ?? "undated";
+
+    if (!groups[date]) {
+      groups[date] = [];
+    }
+
+    groups[date].push(event);
+  });
+
+  return Object.entries(groups).sort(([dateA], [dateB]) => {
+    if (dateA === "undated") return 1;
+    if (dateB === "undated") return -1;
+
+    return dateA.localeCompare(dateB);
+  });
+}
+
 export default function Home() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -97,6 +118,10 @@ export default function Home() {
     notes: "",
     url: "",
   });
+  const groupedEvents = useMemo(
+  () => groupEventsByDate(tripEvents),
+  [tripEvents]
+);
   const [isAddingBooking, setIsAddingBooking] = useState(false);
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
   const [isSavingBooking, setIsSavingBooking] = useState(false);
@@ -1123,8 +1148,27 @@ async function deleteBooking(booking: Booking) {
       </p>
     </div>
   ) : (
-    <div className="space-y-3">
-      {tripEvents.map((tripEvent) => (
+    <div className="space-y-6">
+  {groupedEvents.map(([date, events]) => (
+    <div key={date} className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="font-semibold text-[#243b2f]">
+          {date === "undated"
+            ? "Date to be confirmed"
+            : new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+              })}
+        </h4>
+
+        <span className="text-xs text-gray-500">
+          {events.length} {events.length === 1 ? "event" : "events"}
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        {events.map((tripEvent) => (
         <div
           key={tripEvent.id}
           className="rounded-2xl border border-gray-200 p-4"
@@ -1194,8 +1238,11 @@ async function deleteBooking(booking: Booking) {
             </div>
           </div>
         </div>
-      ))}
+        ))}
+      </div>
     </div>
+  ))}
+</div>
   )}
 </div>
             <div className="mt-6">
