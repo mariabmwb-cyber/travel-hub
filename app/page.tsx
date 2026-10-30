@@ -55,6 +55,26 @@ type TripEvent = {
   source_type: "manual" | "google_calendar";
 };
 
+type TimelineItem = {
+  id: string;
+  kind: "event" | "booking";
+  title: string;
+  date: string | null;
+  checkoutDate?: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  notes: string | null;
+  url: string | null;
+  bookingType?: Booking["booking_type"];
+  status?: Booking["status"];
+  provider?: string | null;
+  confirmationNumber?: string | null;
+  departureLocation?: string | null;
+  arrivalLocation?: string | null;
+  price?: number | null;
+  currency?: string | null;
+};
 
 const initialTrips: Trip[] = [
   {
@@ -100,6 +120,92 @@ function groupEventsByDate(events: TripEvent[]) {
   });
 }
 
+function getNightsCount(
+  checkIn: string,
+  checkOut: string
+): number {
+  const toUtc = (date: string) =>
+    Date.UTC(
+      Number(date.slice(0, 4)),
+      Number(date.slice(5, 7)) - 1,
+      Number(date.slice(8, 10))
+    );
+
+  return Math.round(
+    (toUtc(checkOut) - toUtc(checkIn)) /
+      (1000 * 60 * 60 * 24)
+  );
+}
+
+function createTimelineItems(
+  events: TripEvent[],
+  bookings: Booking[]
+): TimelineItem[] {
+  const eventItems: TimelineItem[] = events.map((event) => ({
+    id: event.id,
+    kind: "event",
+    title: event.title,
+    date: event.event_date,
+    startTime: event.start_time,
+    endTime: event.end_time,
+    location: event.location,
+    notes: event.notes,
+    url: event.url,
+  }));
+
+const bookingItems: TimelineItem[] = bookings.map((booking) => {
+  const startDate = booking.start_at
+    ? new Date(booking.start_at)
+    : null;
+
+  const endDate = booking.end_at
+    ? new Date(booking.end_at)
+    : null;
+
+  const formatDate = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+  const formatTime = (date: Date) =>
+    `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+
+  return {
+    id: booking.id,
+    kind: "booking",
+    title: booking.title,
+    date: startDate ? formatDate(startDate) : null,
+    checkoutDate:
+      booking.booking_type === "hotel" && endDate
+        ? formatDate(endDate)
+        : null,
+    startTime: startDate ? formatTime(startDate) : null,
+    endTime: endDate ? formatTime(endDate) : null,
+    location: booking.location,
+    notes: booking.notes,
+    url: booking.source_url,
+    bookingType: booking.booking_type,
+    status: booking.status,
+    provider: booking.provider,
+    confirmationNumber: booking.confirmation_number,
+    departureLocation: booking.departure_location,
+    arrivalLocation: booking.arrival_location,
+    price: booking.price,
+    currency: booking.currency,
+  };
+});
+
+  return [...eventItems, ...bookingItems].sort((a, b) => {
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+
+    const dateComparison = a.date.localeCompare(b.date);
+    if (dateComparison !== 0) return dateComparison;
+
+    return (a.startTime ?? "99:99").localeCompare(
+      b.startTime ?? "99:99"
+    );
+  });
+}
+
 export default function Home() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -118,10 +224,32 @@ export default function Home() {
     notes: "",
     url: "",
   });
-  const groupedEvents = useMemo(
-  () => groupEventsByDate(tripEvents),
-  [tripEvents]
+  const timelineItems = useMemo(
+  () => createTimelineItems(tripEvents, bookings),
+  [tripEvents, bookings]
 );
+
+const groupedEvents = useMemo(() => {
+  const groups: Record<string, TimelineItem[]> = {};
+
+  timelineItems.forEach((item) => {
+    const date = item.date ?? "undated";
+
+    if (!groups[date]) {
+      groups[date] = [];
+    }
+
+    groups[date].push(item);
+  });
+
+  return Object.entries(groups).sort(([dateA], [dateB]) => {
+    if (dateA === "undated") return 1;
+    if (dateB === "undated") return -1;
+
+    return dateA.localeCompare(dateB);
+  });
+}, [timelineItems]);
+
   const [isAddingBooking, setIsAddingBooking] = useState(false);
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
   const [isSavingBooking, setIsSavingBooking] = useState(false);
@@ -558,14 +686,14 @@ const { data, error } = await query.select().single();
   }
 }
 
-function startEditEvent(event: TripEvent) {
+function startEditEvent(event: TimelineItem) {
   setEditingEventId(event.id);
 
   setEventForm({
     title: event.title,
-    event_date: event.event_date ?? "",
-    start_time: event.start_time ?? "",
-    end_time: event.end_time ?? "",
+    event_date: event.date ?? "",
+    start_time: event.startTime ?? "",
+    end_time: event.endTime ?? "",
     location: event.location ?? "",
     notes: event.notes ?? "",
     url: event.url ?? "",
@@ -1169,76 +1297,180 @@ async function deleteBooking(booking: Booking) {
 
       <div className="space-y-3">
         {events.map((tripEvent) => (
-        <div
-          key={tripEvent.id}
-          className="rounded-2xl border border-gray-200 p-4"
-        >
-          <div className="flex items-start gap-3">
-            <div className="min-w-[60px] text-sm font-medium text-[#45634e]">
-              {tripEvent.start_time
-                ? tripEvent.start_time.slice(0, 5)
-                : "—"}
-            </div>
+<div
+  key={`${tripEvent.kind}-${tripEvent.id}`}
+  className="relative rounded-2xl border border-gray-200 bg-white p-4"
+>
+  <div className="flex items-stretch gap-3">
+    {/* Time */}
+    <div className="w-[60px] shrink-0 pt-1 text-sm font-semibold text-[#45634e]">
+      {tripEvent.startTime
+        ? tripEvent.startTime.slice(0, 5)
+        : "—"}
+    </div>
 
-            <div className="min-w-0 flex-1">
-              <p className="font-medium text-gray-800">
-                {tripEvent.title}
-              </p>
+    {/* Timeline */}
+    <div className="relative flex w-4 shrink-0 justify-center">
+      <div className="absolute bottom-0 top-0 w-px bg-[#cbd8ce]" />
+      <div
+        className={`relative mt-1 h-3 w-3 rounded-full border-2 ${
+          tripEvent.kind === "booking"
+            ? "border-[#b58b45] bg-[#fff8e8]"
+            : "border-[#45634e] bg-white"
+        }`}
+      />
+    </div>
 
-              {tripEvent.event_date && (
-                <p className="mt-1 text-sm text-gray-500">
-                  {new Date(
-                    `${tripEvent.event_date}T12:00:00`
-                  ).toLocaleDateString()}
-                  {tripEvent.end_time
-                    ? ` · Until ${tripEvent.end_time.slice(0, 5)}`
-                    : ""}
-                </p>
+    {/* Details */}
+    <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-semibold text-gray-800">
+          {tripEvent.title}
+        </p>
+
+        {tripEvent.kind === "booking" && (
+          <span className="rounded-full bg-[#f5f0e6] px-2 py-1 text-xs font-medium capitalize text-[#8b6b32]">
+            {tripEvent.bookingType?.replace("_", " ")}
+          </span>
+        )}
+      </div>
+
+      {tripEvent.kind === "booking" && tripEvent.status && (
+        <span className="mt-2 inline-block rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-600">
+          {tripEvent.status}
+        </span>
+      )}
+
+      {tripEvent.kind === "booking" && tripEvent.provider && (
+        <p className="mt-2 text-sm text-gray-600">
+          {tripEvent.provider}
+        </p>
+      )}
+
+      {tripEvent.kind === "booking" &&
+        (tripEvent.departureLocation || tripEvent.arrivalLocation) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-700">
+            {tripEvent.departureLocation && (
+              <span>{tripEvent.departureLocation}</span>
+            )}
+            {tripEvent.departureLocation &&
+              tripEvent.arrivalLocation && (
+                <span className="text-gray-400">→</span>
               )}
-
-              {tripEvent.location && (
-                <p className="mt-1 text-sm text-gray-500">
-                  {tripEvent.location}
-                </p>
-              )}
-
-              {tripEvent.notes && (
-                <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">
-                  {tripEvent.notes}
-                </p>
-              )}
-
-              {tripEvent.url && (
-                <a
-                  href={tripEvent.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 inline-block text-sm text-[#315b43] underline"
-                >
-                  Open link
-                </a>
-              )}
-                            <div className="mt-3 flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => startEditEvent(tripEvent)}
-                                className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-[#315b43] hover:bg-gray-50"
-                              >
-                                Edit
-                              </button>
-
-                               <button
-                                  type="button"
-                                  onClick={() => deleteTripEvent(tripEvent.id)}
-                                  className="rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                                >
-                                  Delete
-                                </button>
-                            </div>
-            </div>
+            {tripEvent.arrivalLocation && (
+              <span>{tripEvent.arrivalLocation}</span>
+            )}
           </div>
-        </div>
-        ))}
+        )}
+
+      {tripEvent.kind === "booking" &&
+        tripEvent.confirmationNumber && (
+          <p className="mt-2 text-xs text-gray-500">
+            Confirmation: {tripEvent.confirmationNumber}
+          </p>
+        )}
+
+      {tripEvent.endTime && (
+        <p className="mt-1 text-xs text-gray-500">
+          Until {tripEvent.endTime.slice(0, 5)}
+        </p>
+      )}
+
+      {tripEvent.checkoutDate && (
+        <p className="mt-1 text-sm text-gray-600">
+         Check-out: {new Date(
+           `${tripEvent.checkoutDate}T12:00:00`
+         ).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+         })}
+      </p>
+      )}
+
+      {tripEvent.date &&
+        tripEvent.checkoutDate &&
+        getNightsCount(tripEvent.date, tripEvent.checkoutDate) > 0 && (
+          <p className="mt-1 text-sm font-medium text-[#45634e]">
+            {getNightsCount(tripEvent.date, tripEvent.checkoutDate)}{" "}
+            {getNightsCount(tripEvent.date, tripEvent.checkoutDate) === 1
+              ? "night"
+              : "nights"}
+          </p>
+        )}
+
+      {tripEvent.location && (
+        <p className="mt-2 text-sm text-gray-500">
+          <span className="mr-1">📍</span>
+          {tripEvent.location}
+        </p>
+      )}
+
+      {tripEvent.kind === "booking" &&
+        tripEvent.price != null && (
+          <p className="mt-2 text-sm font-medium text-gray-700">
+            {tripEvent.price.toFixed(2)} {tripEvent.currency ?? "EUR"}
+          </p>
+        )}
+
+      {tripEvent.notes && (
+        <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">
+          {tripEvent.notes}
+        </p>
+      )}
+
+      {tripEvent.url && (
+        <a
+          href={tripEvent.url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-2 inline-block text-sm text-[#315b43] underline"
+        >
+          {tripEvent.kind === "booking"
+            ? "Open booking confirmation"
+            : "Open link"}
+        </a>
+      )}
+
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (tripEvent.kind === "event") {
+              startEditEvent(tripEvent);
+            } else {
+              const booking = bookings.find(
+                (b) => b.id === tripEvent.id
+              );
+              if (booking) startEditBooking(booking);
+            }
+          }}
+          className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-[#315b43] hover:bg-gray-50"
+        >
+          Edit
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (tripEvent.kind === "event") {
+              deleteTripEvent(tripEvent.id);
+            } else {
+              const booking = bookings.find(
+                (b) => b.id === tripEvent.id
+              );
+              if (booking) deleteBooking(booking);
+            }
+          }}
+          className="rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+))}
       </div>
     </div>
   ))}
