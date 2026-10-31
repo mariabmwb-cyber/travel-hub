@@ -48,31 +48,6 @@ type Booking = {
   stay_id: string | null;
 };
 
-type TransportSegment = {
-  id: string;
-  trip_id: string;
-  user_id: string;
-  direction: "outbound" | "return";
-  segment_order: number;
-  transport_type: "flight" | "train" | "bus" | "car" | "ferry" | "other";
-  origin: string;
-  destination: string;
-  departure_at: string | null;
-  arrival_at: string | null;
-  notes: string | null;
-};
-
-type Stay = {
-  id: string;
-  trip_id: string;
-  user_id: string;
-  name: string;
-  city: string | null;
-  check_in: string;
-  check_out: string;
-  notes: string | null;
-};
-
 type TripEvent = {
   id: string;
   trip_id: string;
@@ -261,32 +236,6 @@ const bookingItems: TimelineItem[] = bookings.map((booking) => {
 export default function Home() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [transportSegments, setTransportSegments] = useState<TransportSegment[]>([]);
-  const [stays, setStays] = useState<Stay[]>([]);
-  const [isAddingTransport, setIsAddingTransport] = useState(false);
-  const [isSavingTransport, setIsSavingTransport] = useState(false);
-  const [editingTransportId, setEditingTransportId] = useState<string | null>(null);
-  const [transportForm, setTransportForm] = useState({
-    direction: "outbound" as "outbound" | "return",
-    transport_type: "flight" as "flight" | "train" | "bus" | "car" | "ferry" | "other",
-    origin: "",
-    destination: "",
-    departure_at: "",
-    arrival_at: "",
-    notes: "",
-  });
-  const [isAddingStay, setIsAddingStay] = useState(false);
-  const [isSavingStay, setIsSavingStay] = useState(false);
-  const [editingStayId, setEditingStayId] = useState<string | null>(null);
-  const [stayForm, setStayForm] = useState({
-    name: "",
-    city: "",
-    check_in: "",
-    check_out: "",
-    notes: "",
-  });
-  const [isLoadingTransport, setIsLoadingTransport] = useState(false);
-  const [isLoadingStays, setIsLoadingStays] = useState(false);
   const [isLoadingBookings, setIsLoadingBookings] = useState(false);
   const [tripEvents, setTripEvents] = useState<TripEvent[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
@@ -347,8 +296,6 @@ const groupedEvents = useMemo(() => {
     currency: "EUR",
     notes: "",
     source_url: "",
-    transport_segment_id: "",
-    stay_id: "",
   });
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
   const [search, setSearch] = useState("");
@@ -440,64 +387,6 @@ useEffect(() => {
   }
 
   loadBookings();
-}, [selectedTrip?.id]);
-
-useEffect(() => {
-  async function loadTransportSegments() {
-    if (!selectedTrip) {
-      setTransportSegments([]);
-      return;
-    }
-
-    setIsLoadingTransport(true);
-
-    const { data, error } = await supabase
-      .from("trip_transport_segments")
-      .select("*")
-      .eq("trip_id", selectedTrip.id)
-      .order("direction", { ascending: true })
-      .order("segment_order", { ascending: true });
-
-    if (error) {
-      console.error("Could not load transport segments:", error.message);
-      setTransportSegments([]);
-    } else {
-      setTransportSegments((data ?? []) as TransportSegment[]);
-    }
-
-    setIsLoadingTransport(false);
-  }
-
-  loadTransportSegments();
-}, [selectedTrip?.id]);
-
-
-useEffect(() => {
-  async function loadStays() {
-    if (!selectedTrip) {
-      setStays([]);
-      return;
-    }
-
-    setIsLoadingStays(true);
-
-    const { data, error } = await supabase
-      .from("trip_stays")
-      .select("*")
-      .eq("trip_id", selectedTrip.id)
-      .order("check_in", { ascending: true });
-
-    if (error) {
-      console.error("Could not load stays:", error.message);
-      setStays([]);
-    } else {
-      setStays((data ?? []) as Stay[]);
-    }
-
-    setIsLoadingStays(false);
-  }
-
-  loadStays();
 }, [selectedTrip?.id]);
 
 
@@ -752,6 +641,15 @@ async function deleteTrip(trip: Trip) {
   setSelectedTrip(null);
 }
   
+function toLocalDateTimeInput(value: string): string {
+  const date = new Date(value);
+
+  const pad = (number: number) => String(number).padStart(2, "0");
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+
 function startEditBooking(booking: Booking) {
   setBookingForm({
     booking_type: booking.booking_type,
@@ -760,11 +658,11 @@ function startEditBooking(booking: Booking) {
     confirmation_number: booking.confirmation_number ?? "",
     status: booking.status,
     start_at: booking.start_at
-      ? new Date(booking.start_at).toISOString().slice(0, 16)
-      : "",
-    end_at: booking.end_at
-      ? new Date(booking.end_at).toISOString().slice(0, 16)
-      : "",
+  ? toLocalDateTimeInput(booking.start_at)
+  : "",
+end_at: booking.end_at
+  ? toLocalDateTimeInput(booking.end_at)
+  : "",
     location: booking.location ?? "",
     departure_location: booking.departure_location ?? "",
     arrival_location: booking.arrival_location ?? "",
@@ -772,8 +670,6 @@ function startEditBooking(booking: Booking) {
     currency: booking.currency ?? "EUR",
     notes: booking.notes ?? "",
     source_url: booking.source_url ?? "",
-    transport_segment_id: "",
-    stay_id: "",
   });
 
   setEditingBookingId(booking.id);
@@ -796,8 +692,6 @@ function resetBookingForm() {
     currency: "EUR",
     notes: "",
     source_url: "",
-    transport_segment_id: "",
-    stay_id: "",
   });
 
   setEditingBookingId(null);
@@ -1001,8 +895,6 @@ async function deleteTripEvent(eventId: string) {
       currency: bookingForm.currency.trim() || "EUR",
       notes: bookingForm.notes.trim() || null,
       source_url: bookingForm.source_url.trim() || null,
-      transport_segment_id: bookingForm.transport_segment_id || null,
-      stay_id: bookingForm.stay_id || null,
     };
 
     if (editingBookingId !== null) {
@@ -1075,239 +967,12 @@ async function deleteTripEvent(eventId: string) {
       currency: "EUR",
       notes: "",
       source_url: "",
-      transport_segment_id: "",
-      stay_id: "",
     });
 
     setEditingBookingId(null);
     setIsAddingBooking(false);
   } finally {
     setIsSavingBooking(false);
-  }
-}
-
-async function saveTransportSegment() {
-  if (!selectedTrip) return;
-
-  const origin = transportForm.origin.trim();
-  const destination = transportForm.destination.trim();
-
-  if (!origin || !destination) {
-    alert("Please enter both origin and destination.");
-    return;
-  }
-
-  if (
-    transportForm.departure_at &&
-    transportForm.arrival_at &&
-    transportForm.arrival_at < transportForm.departure_at
-  ) {
-    alert("Arrival date must be after departure date.");
-    return;
-  }
-
-  setIsSavingTransport(true);
-
-  try {
-    const { data: sessionData, error: sessionError } =
-      await supabase.auth.getSession();
-
-    if (sessionError || !sessionData.session) {
-      alert("Please sign in again.");
-      window.location.href = "/login";
-      return;
-    }
-
-    const userId = sessionData.session.user.id;
-
-    const existingSegments = transportSegments.filter(
-      (segment) => segment.direction === transportForm.direction
-    );
-
-    const segmentData = {
-      direction: transportForm.direction,
-      segment_order:
-        editingTransportId !== null
-          ? transportSegments.find(
-              (segment) => segment.id === editingTransportId
-            )?.segment_order ?? existingSegments.length + 1
-          : existingSegments.length + 1,
-      transport_type: transportForm.transport_type,
-      origin,
-      destination,
-      departure_at: transportForm.departure_at
-        ? new Date(transportForm.departure_at).toISOString()
-        : null,
-      arrival_at: transportForm.arrival_at
-        ? new Date(transportForm.arrival_at).toISOString()
-        : null,
-      notes: transportForm.notes.trim() || null,
-    };
-
-    if (editingTransportId !== null) {
-      const { data, error } = await supabase
-        .from("trip_transport_segments")
-        .update({
-          ...segmentData,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", editingTransportId)
-        .eq("trip_id", selectedTrip.id)
-        .eq("user_id", userId)
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Could not update transport segment:", error.message);
-        alert("Could not update transport segment: " + error.message);
-        return;
-      }
-
-      setTransportSegments((current) =>
-        current.map((segment) =>
-          segment.id === editingTransportId
-            ? (data as TransportSegment)
-            : segment
-        )
-      );
-    } else {
-      const { data, error } = await supabase
-        .from("trip_transport_segments")
-        .insert({
-          ...segmentData,
-          trip_id: selectedTrip.id,
-          user_id: userId,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Could not save transport segment:", error.message);
-        alert("Could not save transport segment: " + error.message);
-        return;
-      }
-
-      setTransportSegments((current) => [
-        ...current,
-        data as TransportSegment,
-      ]);
-    }
-
-    setTransportForm({
-      direction: "outbound",
-      transport_type: "flight",
-      origin: "",
-      destination: "",
-      departure_at: "",
-      arrival_at: "",
-      notes: "",
-    });
-
-    setEditingTransportId(null);
-    setIsAddingTransport(false);
-  } finally {
-    setIsSavingTransport(false);
-  }
-}
-
-async function saveStay() {
-  if (!selectedTrip) return;
-
-  const name = stayForm.name.trim();
-
-  if (!name) {
-    alert("Please enter accommodation name.");
-    return;
-  }
-
-  if (!stayForm.check_in || !stayForm.check_out) {
-    alert("Please enter check-in and check-out dates.");
-    return;
-  }
-
-  if (stayForm.check_out <= stayForm.check_in) {
-    alert("Check-out must be after check-in.");
-    return;
-  }
-
-  setIsSavingStay(true);
-
-  try {
-    const { data: sessionData, error: sessionError } =
-      await supabase.auth.getSession();
-
-    if (sessionError || !sessionData.session) {
-      alert("Please sign in again.");
-      window.location.href = "/login";
-      return;
-    }
-
-    const userId = sessionData.session.user.id;
-
-    const stayData = {
-      name,
-      city: stayForm.city.trim() || null,
-      check_in: stayForm.check_in,
-      check_out: stayForm.check_out,
-      notes: stayForm.notes.trim() || null,
-    };
-
-    if (editingStayId !== null) {
-      const { data, error } = await supabase
-        .from("trip_stays")
-        .update({
-          ...stayData,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", editingStayId)
-        .eq("trip_id", selectedTrip.id)
-        .eq("user_id", userId)
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Could not update stay:", error.message);
-        alert("Could not update stay: " + error.message);
-        return;
-      }
-
-      setStays((current) =>
-        current.map((stay) =>
-          stay.id === editingStayId ? (data as Stay) : stay
-        )
-      );
-    } else {
-      const { data, error } = await supabase
-        .from("trip_stays")
-        .insert({
-          ...stayData,
-          trip_id: selectedTrip.id,
-          user_id: userId,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Could not save stay:", error.message);
-        alert("Could not save stay: " + error.message);
-        return;
-      }
-
-      setStays((current) => [...current, data as Stay]);
-    }
-
-    setStayForm({
-      name: "",
-      city: "",
-      check_in: "",
-      check_out: "",
-      notes: "",
-    });
-
-    setEditingStayId(null);
-    setIsAddingStay(false);
-  } finally {
-    setIsSavingStay(false);
   }
 }
 
@@ -1346,112 +1011,8 @@ async function deleteBooking(booking: Booking) {
   );
 }
 
-function startEditTransport(segment: TransportSegment) {
-  setTransportForm({
-    direction: segment.direction,
-    transport_type: segment.transport_type,
-    origin: segment.origin,
-    destination: segment.destination,
-    departure_at: segment.departure_at
-      ? new Date(segment.departure_at).toISOString().slice(0, 16)
-      : "",
-    arrival_at: segment.arrival_at
-      ? new Date(segment.arrival_at).toISOString().slice(0, 16)
-      : "",
-    notes: segment.notes ?? "",
-  });
 
-  setEditingTransportId(segment.id);
-  setIsAddingTransport(true);
-}
-
-async function deleteTransportSegment(segment: TransportSegment) {
-  const confirmed = window.confirm(
-    `Delete route segment "${segment.origin} → ${segment.destination}"?`
-  );
-
-  if (!confirmed) return;
-
-  const { data: sessionData, error: sessionError } =
-    await supabase.auth.getSession();
-
-  if (sessionError || !sessionData.session) {
-    alert("Please sign in again.");
-    window.location.href = "/login";
-    return;
-  }
-
-  const userId = sessionData.session.user.id;
-
-  const { error } = await supabase
-    .from("trip_transport_segments")
-    .delete()
-    .eq("id", segment.id)
-    .eq("trip_id", selectedTrip?.id)
-    .eq("user_id", userId);
-
-  if (error) {
-    console.error("Could not delete transport segment:", error.message);
-    alert("Could not delete transport segment: " + error.message);
-    return;
-  }
-
-  setTransportSegments((current) =>
-    current.filter((item) => item.id !== segment.id)
-  );
-}
-
-function startEditStay(stay: Stay) {
-  setStayForm({
-    name: stay.name,
-    city: stay.city ?? "",
-    check_in: stay.check_in,
-    check_out: stay.check_out,
-    notes: stay.notes ?? "",
-  });
-
-  setEditingStayId(stay.id);
-  setIsAddingStay(true);
-}
-
-async function deleteStay(stay: Stay) {
-  const confirmed = window.confirm(
-    `Delete accommodation "${stay.name}"?`
-  );
-
-  if (!confirmed) return;
-
-  const { data: sessionData, error: sessionError } =
-    await supabase.auth.getSession();
-
-  if (sessionError || !sessionData.session) {
-    alert("Please sign in again.");
-    window.location.href = "/login";
-    return;
-  }
-
-  const userId = sessionData.session.user.id;
-
-  const { error } = await supabase
-    .from("trip_stays")
-    .delete()
-    .eq("id", stay.id)
-    .eq("trip_id", selectedTrip?.id)
-    .eq("user_id", userId);
-
-  if (error) {
-    console.error("Could not delete stay:", error.message);
-    alert("Could not delete stay: " + error.message);
-    return;
-  }
-
-  setStays((current) =>
-    current.filter((item) => item.id !== stay.id)
-  );
-}
-
-
-  return (
+return (
     <main className="min-h-screen bg-[#f7f7f4] text-[#202b27]">
       <div className="mx-auto flex min-h-screen max-w-7xl">
         <aside className="hidden w-64 shrink-0 flex-col border-r border-[#e8e9e3] bg-white px-6 py-8 md:flex">
