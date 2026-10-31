@@ -1876,7 +1876,7 @@ async function deleteStay(stay: Stay) {
 
 </div>
 
-            <div className="mt-6">
+ <div className="mt-6">
   <div className="mb-3 flex items-center justify-between">
     <h3 className="text-lg font-semibold text-[#243b2f]">
       Itinerary
@@ -1884,7 +1884,7 @@ async function deleteStay(stay: Stay) {
 
     <div className="flex items-center gap-2">
       <span className="rounded-full bg-[#edf3ed] px-3 py-1 text-sm text-[#45634e]">
-        {tripEvents.length}
+        {timelineItems.length}
       </span>
 
       <button
@@ -2024,12 +2024,12 @@ async function deleteStay(stay: Stay) {
 
   {isLoadingEvents ? (
     <p className="text-sm text-gray-500">Loading events...</p>
-  ) : tripEvents.length === 0 ? (
+  ) : timelineItems.length === 0 ? (
     <div className="rounded-2xl border border-dashed border-gray-300 p-5 text-center">
       <p className="text-2xl">🗓️</p>
-      <p className="mt-2 font-medium text-gray-700">No events yet</p>
+      <p className="mt-2 font-medium text-gray-700">No itinerary items yet</p>
       <p className="mt-1 text-sm text-gray-500">
-        Add museums, restaurants, concerts and other plans for this trip.
+        Add events or bookings to start planning your trip.
       </p>
     </div>
   ) : (
@@ -2048,7 +2048,7 @@ async function deleteStay(stay: Stay) {
         </h4>
 
         <span className="text-xs text-gray-500">
-          {events.length} {events.length === 1 ? "event" : "events"}
+          {events.length} {events.length === 1 ? "item" : "items"}
         </span>
       </div>
 
@@ -2282,12 +2282,10 @@ async function deleteStay(stay: Stay) {
         onChange={(event) => {
           const newType = event.target.value as Booking["booking_type"];
 
-        setBookingForm({
+          setBookingForm({
           ...bookingForm,
           booking_type: newType,
-          transport_segment_id: "",
-          stay_id: "",
-        });
+           });
         }}
         className="w-full rounded-xl border border-gray-200 bg-white p-3 text-sm"
       >
@@ -2302,77 +2300,6 @@ async function deleteStay(stay: Stay) {
       </select>
     </div>
 
-<p className="text-xs text-red-600">
-  Current type: {bookingForm.booking_type}
-</p>
-
-{bookingForm.booking_type === "hotel" ? (
-  <div>
-    <label className="mb-1 block text-sm font-medium text-gray-700">
-      Link to accommodation
-    </label>
-
-    {stays.length > 0 ? (
-      <select
-        value={bookingForm.stay_id}
-        onChange={(event) =>
-          setBookingForm({
-            ...bookingForm,
-            stay_id: event.target.value,
-            transport_segment_id: "",
-          })
-        }
-        className="w-full rounded-xl border border-gray-200 bg-white p-3 text-sm"
-      >
-        <option value="">Not linked</option>
-        {stays.map((stay) => (
-          <option key={stay.id} value={stay.id}>
-            {stay.name} — {stay.city || "City not specified"} (
-            {stay.check_in} – {stay.check_out})
-          </option>
-        ))}
-      </select>
-    ) : (
-      <p className="text-sm text-gray-500">
-        No accommodation added yet. Add a stay in Trip Essentials first.
-      </p>
-    )}
-  </div>
-) : ["flight", "train", "bus", "car_rental", "transfer", "ferry"].includes(
-    bookingForm.booking_type
-  ) ? (
-  <div>
-    <label className="mb-1 block text-sm font-medium text-gray-700">
-      Link to transport segment
-    </label>
-
-    {transportSegments.length > 0 ? (
-      <select
-        value={bookingForm.transport_segment_id}
-        onChange={(event) =>
-          setBookingForm({
-            ...bookingForm,
-            transport_segment_id: event.target.value,
-            stay_id: "",
-          })
-        }
-        className="w-full rounded-xl border border-gray-200 bg-white p-3 text-sm"
-      >
-        <option value="">Not linked</option>
-        {transportSegments.map((segment) => (
-          <option key={segment.id} value={segment.id}>
-            {segment.direction === "outbound" ? "Outbound" : "Return"} —{" "}
-            {segment.origin} → {segment.destination}
-          </option>
-        ))}
-      </select>
-    ) : (
-      <p className="text-sm text-gray-500">
-        No transport segments added yet. Add a route in Trip Essentials first.
-      </p>
-    )}
-  </div>
-) : null}
 
     <div>
       <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -2601,11 +2528,7 @@ async function deleteStay(stay: Stay) {
 
   
 </div>
-            <p className="mt-5 text-sm leading-6 text-gray-500">
-              This is your first preview. We’ll add editable trip details,
-              itineraries, calendar events and booking imports in the next steps.
-            </p>
-            
+                        
             <div className="mt-6 flex gap-3">
             <button
               onClick={() => startEdit(selectedTrip)}
