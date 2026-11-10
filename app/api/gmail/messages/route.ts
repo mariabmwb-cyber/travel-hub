@@ -7,6 +7,8 @@ import { google } from "googleapis";
 import { getAuthenticatedUser } from "../../../../lib/supabase-server";
 import { supabaseAdmin } from "../../../../lib/supabase-admin";
 import { decryptGmailToken } from "../../../../lib/gmail-encryption";
+import { extractGmailText } from "../../../../lib/gmail-message-parser";
+import { findBookingDates } from "../../../../lib/booking-dates";
 
 export async function GET(request: Request) {
   const authorization = request.headers.get("authorization");
@@ -63,12 +65,50 @@ export async function GET(request: Request) {
     const result = await gmail.users.messages.list({
       userId: "me",
       q: "category:travel OR subject:(booking confirmation reservation itinerary)",
-      maxResults: 10,
+      maxResults: 50,
     });
 
-    return NextResponse.json({
-      messages: result.data.messages ?? [],
-    });
+
+const messages = await Promise.all(
+  (result.data.messages ?? []).map(async (message) => {
+    const details = await gmail.users.messages.get({
+  userId: "me",
+  id: message.id!,
+  format: "full",
+});
+
+    const headers = details.data.payload?.headers ?? [];
+
+    function getHeader(name: string) {
+      return (
+        headers.find(
+          (header) =>
+            header.name?.toLowerCase() === name.toLowerCase()
+        )?.value ?? ""
+      );
+    }
+
+  
+const emailText = extractGmailText(details.data.payload);
+
+const dateCandidates = findBookingDates(
+  `${getHeader("Subject")}\n${emailText}`
+);
+
+return {
+  id: message.id,
+  threadId: message.threadId,
+  subject: getHeader("Subject"),
+  from: getHeader("From"),
+  date: getHeader("Date"),
+  dateCandidates: dateCandidates.slice(0, 10),
+};
+
+  })
+);
+
+return NextResponse.json({ messages });
+
   } catch (error) {
     console.error("Gmail reading failed:", error);
 
