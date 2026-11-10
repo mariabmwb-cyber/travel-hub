@@ -3,6 +3,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import GmailConnectButton from "./components/GmailConnectButton";
+import GmailConnectionHandler from "./components/GmailConnectionHandler";
 
 type Trip = {
   id: string;
@@ -1049,6 +1051,11 @@ return (
               Soon
             </span>
           </div>
+          <div className="mt-5">
+          <GmailConnectButton />
+          <GmailConnectionHandler />
+          </div>
+
 
           <div className="mt-auto rounded-2xl bg-[#f7f7f4] p-4">
             <div className="mb-2 text-xl">🌍</div>
