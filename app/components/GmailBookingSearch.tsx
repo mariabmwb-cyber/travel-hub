@@ -4,12 +4,26 @@
 import { useState } from "react";
 import { supabase } from "../../lib/supabase";
 
+
+type FlightBooking = {
+  airline: string | null;
+  flightNumber: string | null;
+  departureAirport: string | null;
+  arrivalAirport: string | null;
+  departureTime: string | null;
+  arrivalTime: string | null;
+  reservationNumber: string | null;
+};
+
+
+
 type GmailMessage = {
   id: string;
   threadId?: string;
   subject: string;
   from: string;
   date: string;
+  flightBookings?: FlightBooking[];
   dateCandidates: {
     date: string;
     context: string;
@@ -98,6 +112,50 @@ export default function GmailBookingSearch() {
           <p className="mt-1 text-xs text-gray-500">
             {message.date}
           </p>
+
+
+
+{message.flightBookings?.map((flight, index) => (
+  <div
+    key={`${flight.flightNumber}-${flight.departureTime}-${index}`}
+    className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3"
+  >
+    <p className="text-xs font-semibold text-emerald-800">
+      ✈️ Flight booking detected
+    </p>
+
+    <p className="mt-2 font-semibold text-gray-900">
+      {flight.departureAirport ?? "Unknown airport"}
+      {" → "}
+      {flight.arrivalAirport ?? "Unknown airport"}
+    </p>
+
+    <p className="mt-1 text-xs text-gray-700">
+      {flight.airline ?? "Airline unknown"}
+      {flight.flightNumber
+        ? ` · ${flight.flightNumber}`
+        : ""}
+    </p>
+
+    {flight.departureTime && (
+      <p className="mt-2 text-xs text-gray-700">
+        Departure: {flight.departureTime}
+      </p>
+    )}
+
+    {flight.arrivalTime && (
+      <p className="mt-1 text-xs text-gray-700">
+        Arrival: {flight.arrivalTime}
+      </p>
+    )}
+
+    {flight.reservationNumber && (
+      <p className="mt-2 text-xs text-gray-600">
+        Reservation: {flight.reservationNumber}
+      </p>
+    )}
+  </div>
+))}
 
 
 <div className="mt-3 border-t border-gray-100 pt-2">

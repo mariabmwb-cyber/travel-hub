@@ -9,6 +9,7 @@ import { supabaseAdmin } from "../../../../lib/supabase-admin";
 import { decryptGmailToken } from "../../../../lib/gmail-encryption";
 import { extractGmailText } from "../../../../lib/gmail-message-parser";
 import { findBookingDates } from "../../../../lib/booking-dates";
+import { extractFlightBookings } from "@/lib/flight-booking-parser";
 
 export async function GET(request: Request) {
   const authorization = request.headers.get("authorization");
@@ -90,6 +91,7 @@ const messages = await Promise.all(
 
   
 const emailText = extractGmailText(details.data.payload);
+const flightBookings = extractFlightBookings(details.data.payload);
 
 const dateCandidates = findBookingDates(
   `${getHeader("Subject")}\n${emailText}`
@@ -102,6 +104,7 @@ return {
   from: getHeader("From"),
   date: getHeader("Date"),
   dateCandidates: dateCandidates.slice(0, 10),
+  flightBookings,
 };
 
   })
